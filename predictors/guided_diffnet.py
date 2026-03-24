@@ -17,108 +17,8 @@ from pathlib import Path
 
 
 from av2.datasets.motion_forecasting.data_schema import TrackCategory
+from utils import clean_and_filter_agents_batched, clean_and_filter_agents, smooth_stop_poly_batched, smooth_stop_poly
 
-
-# Necessary since some predicted trajectories end up with unrealistic values
-
-def smooth_stop_poly(
-    traj: torch.Tensor,
-    max_step: float = 10.0,
-    default_horizon: int = 5,
-    exponent: float = 2.0,
-    agent_types: list | torch.Tensor | None = None,
-    horizon_map: dict | None = None,
-    max_velocity: float | None = None,
-):
-    """
-    Polynomial slowdown after detecting jumps.
-
-    Args:
-        traj: (N, T, 2) tensor (world coords)
-        max_step: threshold for detecting a jump between consecutive steps
-        default_horizon: number of steps over which to decelerate
-        exponent: polynomial exponent (2.0 => quadratic easing)
-        agent_types: optional (N,) array of agent type keys (used with horizon_map)
-        horizon_map: optional dict mapping agent_type -> horizon
-        max_velocity: optional clamp on the magnitude of the "last valid" velocity
-
-    Returns:
-        corrected: (N, T, 2) tensor with smoothed stops
-    """
-    assert traj.ndim == 3 and traj.shape[2] == 2
-    device = traj.device
-    corrected = traj.clone()
-    N, T, _ = corrected.shape
-    if T <= 1:
-        return corrected
-
-    # compute distances between consecutive steps
-    diffs = corrected[:, 1:] - corrected[:, :-1]      # (N, T-1, 2)
-    dists = torch.norm(diffs, dim=-1)                 # (N, T-1)
-    jumps = dists > max_step                          # (N, T-1)
-    has_jump = jumps.any(dim=1)                       # (N,)
-
-    if not has_jump.any():
-        return corrected
-
-    # first jump index per trajectory (index of transition: between k and k+1)
-    first_k = torch.argmax(jumps.int(), dim=1)       # returns 0 if none - we will mask
-    traj_idxs = torch.nonzero(has_jump).squeeze(1)    # only trajectories that actually have jumps
-
-    for n in traj_idxs:
-        n = int(n.item())
-        # ensure the argmax corresponds to a true jump (argmax returns 0 even if no True)
-        k = int(first_k[n].item())
-        if not jumps[n, k]:
-            # fallback to explicit search (shouldn't happen often)
-            true_inds = jumps[n].nonzero(as_tuple=True)[0]
-            if true_inds.numel() == 0:
-                continue
-            k = int(true_inds[0].item())
-
-        t0 = k + 1                 # index of the first bad position (p_{k+1})
-        last_valid_idx = t0 - 1    # index of last valid position (p_k)
-
-        p0 = corrected[n, last_valid_idx].clone()
-        # compute "last valid" velocity (if available)
-        if last_valid_idx > 0:
-            v0 = corrected[n, last_valid_idx] - corrected[n, last_valid_idx - 1]
-        else:
-            v0 = torch.zeros_like(p0)
-
-        # optional clamp on v0 magnitude
-        if (max_velocity is not None) and (torch.norm(v0) > 0):
-            v_norm = torch.norm(v0)
-            if v_norm > max_velocity:
-                v0 = v0 * (max_velocity / (v_norm + 1e-8))
-
-        # choose horizon (possibly agent-dependent)
-        h = default_horizon
-        if (agent_types is not None) and (horizon_map is not None):
-            key = agent_types[n]
-            # support tensors and strings: convert to python if needed
-            try:
-                key = key.item()
-            except Exception:
-                pass
-            h = horizon_map.get(key, default_horizon)
-
-        # apply polynomial easing for indices last_valid_idx + 1 .. last_valid_idx + h
-        for i in range(1, h + 1):
-            idx = last_valid_idx + i
-            if idx >= T:
-                break
-            factor = 1.0 - (i / float(h)) ** float(exponent)
-            corrected[n, idx] = p0 + factor * v0
-
-        # freeze position after the horizon (so original future bad points are overwritten)
-        last_idx = min(T - 1, last_valid_idx + h)
-        if last_idx + 1 < T:
-            # broadcast the frozen position into the tail
-            frozen = corrected[n, last_idx].unsqueeze(0).expand(T - last_idx - 1, 2)
-            corrected[n, last_idx + 1 :] = frozen
-
-    return corrected
 
 # --- safe deepcopy for tensors ---
 def deepcopy_preserve_tensors(obj):
@@ -130,62 +30,6 @@ def deepcopy_preserve_tensors(obj):
     except Exception:
         return obj
 # --------------------------------
-
-
-# filter invalid fixed agents and return cleaned trajectories + mask of valid agents
-def clean_and_filter_agents(full_world):
-    """
-    full_world: [N, T, 2]
-
-    returns:
-      world_valid: [N_valid, T, 2]   (only valid agents, cleaned)
-      agent_mask:  [N]               (True = kept agent)
-    """
-    N, T, _ = full_world.shape
-    device = full_world.device
-
-    # 1) timestep validity mask
-    valid = (full_world.abs().sum(-1) != 0)  # [N, T]
-
-    # 2) agent-level validity
-    agent_mask = valid.any(dim=1)             # [N]
-
-    # 3) remove fully invalid agents
-    world = full_world[agent_mask]             # [N_valid, T, 2]
-    valid = valid[agent_mask]                  # [N_valid, T]
-
-    # early exit
-    if world.numel() == 0:
-        return world, agent_mask
-
-    Nv = world.shape[0]
-    time = torch.arange(T, device=device)
-
-    # 4) forward fill indices
-    last_valid = torch.where(
-        valid,
-        time.unsqueeze(0),
-        torch.full((Nv, T), -1, device=device)
-    )
-    last_valid = torch.cummax(last_valid, dim=1).values
-
-    # 5) backward fill indices
-    next_valid = torch.where(
-        valid,
-        time.unsqueeze(0),
-        torch.full((Nv, T), T, device=device)
-    )
-    next_valid = torch.cummin(next_valid.flip(1), dim=1).values.flip(1)
-
-    # 6) choose valid index per timestep
-    idx = torch.where(last_valid >= 0, last_valid, next_valid)
-    idx = idx.clamp(0, T - 1)
-
-    # 7) gather filled trajectories
-    idx = idx.unsqueeze(-1).expand(-1, -1, 2)
-    world_valid = torch.gather(world, dim=1, index=idx)
-
-    return world_valid, agent_mask
 
 
 class GuidedJointDiffusion(JointDiffusion):
@@ -594,6 +438,21 @@ class GuidedDiffNet(DiffNet):
         rec_traj = rec_traj.permute(1, 0, 2)                         # [N_eval, 1, 60, 2]
         rec_traj = rec_traj.view(rec_traj.size(0), rec_traj.size(1), self.num_future_steps, 2)
 
+
+
+        if plot:
+            goal_point = gt_eval[:, -1, :2].detach().clone()
+            batch_idx = data['agent']['batch'][eval_mask]
+            num_scenes = batch_idx[-1].item() + 1
+            num_agents_per_scene = torch.bincount(batch_idx, minlength=batch_idx.max().item() + 1)
+            self.plot_predictions(
+                b_idx=b_idx, data=data, eval_mask=eval_mask,
+                traj_refine=traj_refine, rec_traj=rec_traj,
+                gt_eval=gt_eval, gt_no_pred=gt_no_pred, goal_point=goal_point,
+                num_scenes=num_scenes, num_agents_per_scene=num_agents_per_scene,
+                    exp_id = exp_id, img_folder=img_folder, sub_folder=sub_folder
+            )
+
         # ---------- RETURN BRANCHES ----------
         if return_pred_only:
             # Transform eval agents only to world coords (unchanged behavior)
@@ -609,18 +468,7 @@ class GuidedDiffNet(DiffNet):
             rec_traj_world = torch.matmul(rec_traj[:, :, :, :2], rot_mat.unsqueeze(1)) \
                             + origin_eval[:, :2].reshape(-1, 1, 1, 2)
 
-            if plot:
-                goal_point = gt_eval[:, -1, :2].detach().clone()
-                batch_idx = data['agent']['batch'][eval_mask]
-                num_scenes = batch_idx[-1].item() + 1
-                num_agents_per_scene = torch.bincount(batch_idx, minlength=batch_idx.max().item() + 1)
-                self.plot_predictions(
-                    b_idx=b_idx, data=data, eval_mask=eval_mask,
-                    traj_refine=traj_refine, rec_traj=rec_traj,
-                    gt_eval=gt_eval, gt_no_pred=gt_no_pred, goal_point=goal_point,
-                    num_scenes=num_scenes, num_agents_per_scene=num_agents_per_scene,
-                      exp_id = exp_id, img_folder=img_folder, sub_folder=sub_folder
-                )
+            
 
             types = self.decode_types_from_scenario(data, b_idx, return_pred=True)
             if return_types:
@@ -633,95 +481,174 @@ class GuidedDiffNet(DiffNet):
             # ---------- NEW: return full + components (scene-consistent) ----------
             N_total = data['agent']['category'].size(0)
             T = self.num_future_steps
+            S = rec_traj.size(1)
 
-            # Predicted local trajectories for all eval agents (global order)
-            pred_eval_local_all = rec_traj.squeeze(1)        # [N_eval_all, 60, 2]
-            mask_eval_all = reg_mask[eval_mask].unsqueeze(-1)  # [N_eval_all, 60, 1]
-            gt_eval_local_all = gt[eval_mask][..., :2]       # [N_eval_all, 60, 2]
-
-            # Start with GT for all agents
-            full_local = gt[:, -T:, :2].clone()               # [N_total, 60, 2]
-
-            # Fused eval (for display/logging only)
-            fused_eval_local_all = pred_eval_local_all * mask_eval_all.float() \
-                                   + gt_eval_local_all * (1.0 - mask_eval_all.float())
-            full_local[eval_mask] = fused_eval_local_all
-
-            # Rotate ALL agents into world coords
-            origin_all = data['agent']['position'][:, self.num_historical_steps - 1, :2]   # [N_total, 2]
-            theta_all = data['agent']['heading'][:, self.num_historical_steps - 1]
-            cos_all, sin_all = theta_all.cos(), theta_all.sin()
-            rot_all = torch.zeros(N_total, 2, 2, device=self.device)
-            rot_all[:, 0, 0] = cos_all
-            rot_all[:, 0, 1] = sin_all
-            rot_all[:, 1, 0] = -sin_all
-            rot_all[:, 1, 1] = cos_all
-
-            origin_eval = data['agent']['position'][eval_mask, self.num_historical_steps - 1]
-            theta_eval = data['agent']['heading'][eval_mask, self.num_historical_steps - 1]
-            cos, sin = theta_eval.cos(), theta_eval.sin()
-            rot_mat = torch.zeros(eval_mask.sum(), 2, 2, device=self.device)
-            rot_mat[:, 0, 0] = cos
-            rot_mat[:, 0, 1] = sin
-            rot_mat[:, 1, 0] = -sin
-            rot_mat[:, 1, 1] = cos
-
-            rec_traj_world = torch.matmul(rec_traj[:, :, :, :2], rot_mat.unsqueeze(1)) \
-                            + origin_eval[:, :2].reshape(-1, 1, 1, 2)
-
-            full_world = torch.einsum('ntc,ncd->ntd', full_local, rot_all) \
-                        + origin_all[:, :2].unsqueeze(1)   # [N_total, 60, 2]
-
-            # --------- SCENE-CONSISTENT INDICES/MASKS ----------
+            # --------- SCENE-CONSISTENT INDICES/MASKS (compute ONCE, independent of S) ----------
             batch_ids = data['agent']['batch']  # [N_total]
-            # scene_mask is True for agents belonging to this b_idx.
             if (batch_ids == b_idx).any():
                 scene_mask = (batch_ids == b_idx)
             else:
-                # If cond_data is single-scene, b_idx likely doesn't exist here; take all agents.
                 scene_mask = torch.ones_like(batch_ids, dtype=torch.bool)
 
-            # Global eval indices (positions in [0..N_total-1])
             eval_idx_all = torch.nonzero(eval_mask, as_tuple=False).squeeze(-1)  # [N_eval_all]
+            scene_positions_in_eval = torch.nonzero(scene_mask[eval_mask], as_tuple=False).squeeze(-1)  # [N_eval_scene]
+            eval_idx_scene = eval_idx_all[scene_positions_in_eval]  # [N_eval_scene]
 
-            # Among those eval agents, pick only those belonging to this scene
-            # This yields positions inside the eval list
-            scene_positions_in_eval = torch.nonzero(scene_mask[eval_mask],
-                                                    as_tuple=False).squeeze(-1)  # [N_eval_scene]
+            # ============================================================
+            # Build pred/mask/gt and full_world + rec_traj_scene
+            # ============================================================
 
-            # Row indices into full_world for the scene’s eval agents
-            eval_idx_scene = eval_idx_all[scene_positions_in_eval]               # [N_eval_scene]
+            if S == 1:
+                # -----------------------
+                # Single-sample (keep working code path)
+                # -----------------------
+                pred_eval_local_all = rec_traj.squeeze(1)                  # [N_eval_all, T, 2]
+                mask_eval_all = reg_mask[eval_mask].unsqueeze(-1)          # [N_eval_all, T, 1]
+                gt_eval_local_all = gt[eval_mask][..., :2]                 # [N_eval_all, T, 2]
 
-            # Slice predicted things to scene only
-            pred_eval_local_scene = pred_eval_local_all[scene_positions_in_eval]  # [N_eval_scene, 60, 2]
-            mask_eval_scene = mask_eval_all[scene_positions_in_eval]              # [N_eval_scene, 60, 1]
-            rec_traj_scene = rec_traj_world.squeeze(1)
-            # Return full world + scene-consistent pieces
-            full_world = smooth_stop_poly(full_world, max_step=10.0)
+                full_local = gt[:, -T:, :2].clone()                        # [N_total, T, 2]
 
-            types = self.decode_types_from_scenario(data, b_idx, return_pred=False)
-            if filter_agents:
-                
-                full_world, agent_mask = clean_and_filter_agents(full_world)
-                valid_types = types[agent_mask.to(types.device)]
-                orig_to_new = torch.full(
-                    (agent_mask.shape[0],),
-                    -1,
-                    device=agent_mask.device,
-                    dtype=torch.long
+                fused_eval_local_all = (
+                    pred_eval_local_all * mask_eval_all.float()
+                    + gt_eval_local_all * (1.0 - mask_eval_all.float())
                 )
+                full_local[eval_mask] = fused_eval_local_all
 
-                orig_to_new[agent_mask] = torch.arange(
-                    agent_mask.sum(),
-                    device=agent_mask.device
-                )
+                # Rotate ALL agents into world coords
+                origin_all = data['agent']['position'][:, self.num_historical_steps - 1, :2]  # [N_total, 2]
+                theta_all = data['agent']['heading'][:, self.num_historical_steps - 1]
+                cos_all, sin_all = theta_all.cos(), theta_all.sin()
+                rot_all = torch.zeros(N_total, 2, 2, device=self.device)
+                rot_all[:, 0, 0] = cos_all
+                rot_all[:, 0, 1] = sin_all
+                rot_all[:, 1, 0] = -sin_all
+                rot_all[:, 1, 1] = cos_all
 
-                eval_mask = orig_to_new[eval_idx_scene]
-                
-                types = valid_types
+                full_world = torch.einsum('ntc,ncd->ntd', full_local, rot_all) \
+                            + origin_all[:, :2].unsqueeze(1)              # [N_total, T, 2]
 
-            if return_types:
-                
-                return full_world, rec_traj_scene, mask_eval_scene, eval_mask, types
+                # Predicted trajectories in world coords (eval agents)
+                origin_eval = data['agent']['position'][eval_mask, self.num_historical_steps - 1]
+                theta_eval = data['agent']['heading'][eval_mask, self.num_historical_steps - 1]
+                cos, sin = theta_eval.cos(), theta_eval.sin()
+                rot_mat = torch.zeros(eval_mask.sum(), 2, 2, device=self.device)
+                rot_mat[:, 0, 0] = cos
+                rot_mat[:, 0, 1] = sin
+                rot_mat[:, 1, 0] = -sin
+                rot_mat[:, 1, 1] = cos
+
+                rec_traj_world = torch.matmul(rec_traj[:, :, :, :2], rot_mat.unsqueeze(1)) \
+                                + origin_eval[:, :2].reshape(-1, 1, 1, 2)  # [N_eval_all, 1, T, 2]
+
+                # Scene-consistent outputs
+                mask_eval_scene = mask_eval_all[scene_positions_in_eval]     # [N_eval_scene, T, 1]
+                rec_traj_scene = rec_traj_world.squeeze(1)                   # [N_eval_all, T, 2] (caller uses eval_mask indices)
+
+                # Post-process
+                full_world = smooth_stop_poly(full_world, max_step=10.0)
+
+                types = self.decode_types_from_scenario(data, b_idx, return_pred=False)
+
+                if filter_agents:
+                    full_world, agent_mask = clean_and_filter_agents(full_world)
+
+                    valid_types = types[agent_mask.to(types.device)]
+
+                    orig_to_new = torch.full(
+                        (agent_mask.shape[0],),
+                        -1,
+                        device=agent_mask.device,
+                        dtype=torch.long
+                    )
+                    orig_to_new[agent_mask] = torch.arange(
+                        agent_mask.sum(),
+                        device=agent_mask.device
+                    )
+
+                    eval_mask = orig_to_new[eval_idx_scene]
+                    types = valid_types
+
+                if return_types:
+                    return full_world, rec_traj_scene, mask_eval_scene, eval_mask, types
+                else:
+                    return full_world, rec_traj_scene, mask_eval_scene, eval_mask
+
             else:
-                return full_world, rec_traj_scene, mask_eval_scene, eval_mask
+                # -----------------------
+                # Multi-sample (S > 1) correct logic
+                # -----------------------
+                pred_eval_local_all = rec_traj                               # [N_eval_all, S, T, 2]
+
+                mask_eval_all = reg_mask[eval_mask]                          # [N_eval_all, T]
+                mask_eval_all = mask_eval_all.unsqueeze(1).unsqueeze(-1)      # [N_eval_all, 1, T, 1]
+                mask_eval_all = mask_eval_all.expand(-1, S, -1, -1)           # [N_eval_all, S, T, 1]
+
+                gt_eval_local_all = gt[eval_mask][..., :2]                    # [N_eval_all, T, 2]
+                gt_eval_local_all = gt_eval_local_all.unsqueeze(1).expand(-1, S, -1, -1)  # [N_eval_all, S, T, 2]
+
+                full_local = gt[:, -T:, :2].unsqueeze(1).expand(-1, S, -1, -1).clone()    # [N_total, S, T, 2]
+
+                fused_eval_local_all = (
+                    pred_eval_local_all * mask_eval_all.float()
+                    + gt_eval_local_all * (1.0 - mask_eval_all.float())
+                )
+                full_local[eval_mask] = fused_eval_local_all                  # [N_total, S, T, 2]
+
+                # Rotate ALL agents into world coords for ALL samples
+                origin_all = data['agent']['position'][:, self.num_historical_steps - 1, :2]  # [N_total, 2]
+                theta_all = data['agent']['heading'][:, self.num_historical_steps - 1]
+                cos_all, sin_all = theta_all.cos(), theta_all.sin()
+                rot_all = torch.zeros(N_total, 2, 2, device=self.device)
+                rot_all[:, 0, 0] = cos_all
+                rot_all[:, 0, 1] = sin_all
+                rot_all[:, 1, 0] = -sin_all
+                rot_all[:, 1, 1] = cos_all
+
+                full_world = torch.einsum('nstc,ncd->nstd', full_local, rot_all) \
+                            + origin_all[:, :2].unsqueeze(1).unsqueeze(2)    # [N_total, S, T, 2]
+
+                # Predicted trajectories in world coords (eval agents, all samples)
+                origin_eval = data['agent']['position'][eval_mask, self.num_historical_steps - 1]
+                theta_eval = data['agent']['heading'][eval_mask, self.num_historical_steps - 1]
+                cos, sin = theta_eval.cos(), theta_eval.sin()
+                rot_mat = torch.zeros(eval_mask.sum(), 2, 2, device=self.device)
+                rot_mat[:, 0, 0] = cos
+                rot_mat[:, 0, 1] = sin
+                rot_mat[:, 1, 0] = -sin
+                rot_mat[:, 1, 1] = cos
+
+                rec_traj_world = torch.matmul(rec_traj[:, :, :, :2], rot_mat.unsqueeze(1)) \
+                                + origin_eval[:, :2].reshape(-1, 1, 1, 2)    # [N_eval_all, S, T, 2]
+
+                # Scene-consistent outputs (compute ONCE, shared)
+                mask_eval_scene = mask_eval_all[scene_positions_in_eval]       # [N_eval_scene, S, T, 1]
+                rec_traj_scene = rec_traj_world                                 # [N_eval_all, S, T, 2]
+
+                # Post-process
+                full_world = smooth_stop_poly_batched(full_world, max_step=10.0)
+
+                types = self.decode_types_from_scenario(data, b_idx, return_pred=False)
+
+                if filter_agents:
+                    full_world, agent_mask = clean_and_filter_agents_batched(full_world)
+
+                    valid_types = types[agent_mask.to(types.device)]
+
+                    orig_to_new = torch.full(
+                        (agent_mask.shape[0],),
+                        -1,
+                        device=agent_mask.device,
+                        dtype=torch.long
+                    )
+                    orig_to_new[agent_mask] = torch.arange(
+                        agent_mask.sum(),
+                        device=agent_mask.device
+                    )
+
+                    eval_mask = orig_to_new[eval_idx_scene]
+                    types = valid_types
+
+                if return_types:
+                    return full_world, rec_traj_scene, mask_eval_scene, eval_mask, types
+                else:
+                    return full_world, rec_traj_scene, mask_eval_scene, eval_mask

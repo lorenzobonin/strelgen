@@ -10,6 +10,10 @@ from enum import Enum
 import utils.safety_metrics as saf
 
 
+# TO DO:
+# REMOVE UNUSED PROPERTIES
+
+
 ######################################################
 # AGENT TYPES TO DEFINE NEW PROPERTIES
 ######################################################
@@ -653,17 +657,17 @@ def evaluate_reach_fast_slow(full_world, node_types, d_zone=20.0):
 
 def evaluate_ped_somewhere_unmask(full_world, node_types, d_zone=20.0):
     traj = su.reshape_trajectories(full_world, node_types)
-    print("Unique types:", torch.unique(node_types))
+    #print("Unique types:", torch.unique(node_types))
     #print("Positions range:", traj[0,:,0:2,:].min(), traj[0,:,0:2,:].max())
     #print("|v| stats:", traj[0,:,4,:].mean(), traj[0,:,4,:].max())
     N, T, _ = full_world.shape
     ped_labels = [1,2]
     veh_labels = [0,3,4]
 
-    print('ped labels', ped_labels)
-    print('veh_labels', veh_labels)
+    #print('ped labels', ped_labels)
+    #print('veh_labels', veh_labels)
 
-    ped_atom = And(Atom(4, threshold=0.01, lte=False), Atom(4, threshold=0.5, lte=True))
+    ped_atom = And(Atom(4, threshold=0.01, lte=False), Atom(4, threshold=0.3, lte=True))
 
     veh_atom = And(Atom(4, threshold=4.6, lte=False), Atom(4, threshold=6, lte=True))
 
@@ -691,7 +695,7 @@ def evaluate_speeding_surrounded_unmask(
     node_types,
     v_fast=2.0,
     v_neigh_max=0.3,
-    d_sur=3.0,   
+    d_zone=3.0,   
 ):
     """
     Unsafe if: ∃ vehicle with high speed that is SURROUNDED by slow vehicles.
@@ -706,13 +710,13 @@ def evaluate_speeding_surrounded_unmask(
 
     veh_like = [0,3, 4]        # VEHICLE + MOTORBIKE + BUS ONLY
 
-    fast_atom = And(Atom(4, threshold=3, lte=False), Atom(4, threshold=8.0, lte=True))
-    slow_atom = And(Atom(4, threshold=0.1, lte=False), Atom(4, threshold=0.3, lte=True)) # neighbors slow
+    fast_atom = And(Atom(4, threshold=3.2, lte=False), Atom(4, threshold=8.0, lte=True))
+    slow_atom = And(Atom(4, threshold=0.1, lte=False), Atom(4, threshold=0.5, lte=True)) # neighbors slow
 
     surround_slow = Surround(
         left_child=fast_atom,
         right_child=slow_atom,
-        d2=d_sur,
+        d2=d_zone,
         distance_function="Euclid",
         left_labels=veh_like,
         right_labels=veh_like,
@@ -1515,7 +1519,7 @@ def evaluate_unsafe_lanechange_mask(
 
 
 
-
+# REMOVE UNUSED PROPERTIES
 
 
 

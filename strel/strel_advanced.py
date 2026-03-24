@@ -1055,7 +1055,7 @@ class Surround(Node):
         super().__init__()
         self.left_child = left_child
         self.right_child = right_child
-        self.d1 = 0
+        self.d1 = 0.01 #for numerical stability when using labels, avoid self loop
         self.d2 = d2
         self.distance_domain_min = distance_domain_min
         self.distance_domain_max = distance_domain_max

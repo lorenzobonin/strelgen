@@ -1,6 +1,6 @@
 import numpy as np
 
-def min_vehicle_related_distance_per_sample(positions: np.ndarray, agent_types: list[str], inactive_threshold: float = 1e-6, only_vehicles=False):
+def min_vehicle_related_distance_per_sample(positions: np.ndarray, agent_types: list[str], eval_mask: np.ndarray, inactive_threshold: float = 1e-6, only_vehicles=False):
     """
     Compute min pairwise distance per sample, considering only active agents.
     Agents at (0,0) are considered inactive (spawned or out of scenario).
@@ -57,6 +57,11 @@ def min_vehicle_related_distance_per_sample(positions: np.ndarray, agent_types: 
 
     dists = np.where(valid_pairs, dists, np.inf)
     #dists = np.where(dists < 0.10, np.inf, dists)
+    #check only distances where a predicted agent is involved, using eval_mask which contains the indexes of the predicted agents
+    pred_agent_mask = np.zeros(num_agents, dtype=bool)
+    pred_agent_mask[eval_mask] = True
+    pred_pairs = np.logical_or(pred_agent_mask[:, None], pred_agent_mask[None, :])  # (A, A)
+    dists = np.where(pred_pairs[:, :, None, None], dists, np.inf)
 
     # for debugging: find any remaining zero distances (among valid pairs)
     zero_locs = np.argwhere((dists < 0.1) & np.isfinite(dists))  # shape (N,4)

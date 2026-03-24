@@ -85,10 +85,6 @@ if __name__ == '__main__':
     dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers,
                             pin_memory=args.pin_memory, persistent_workers=args.persistent_workers)
     
-    # for data in dataloader:
-    #     model.validation_step(data.to('cuda:4'),1)
-    #     break
-    
     trainer = pl.Trainer(accelerator=args.accelerator, devices=args.devices, strategy='ddp')
     if args.network_mode == 'val':
         a = trainer.validate(model, dataloader)
@@ -129,26 +125,3 @@ if __name__ == '__main__':
     elif args.network_mode == 'test':
         model.submission_file_name = args.submission_file_name
         trainer.test(model, dataloader)
-
-    # print(model.targetVelminError.compute())
-    # print('KinematicConfortRate',model.KinematicConfortRate.compute())
-
-    # print('KinematicFeasibleRate',self.KinematicFeasibleRate.compute())
-    # print('targetVelmeanError',self.targetVelmeanError.compute())
-    # import csv
-
-    # # Open the file in write mode
-    # with open('example.csv', mode='a', newline='') as file:
-    #     writer = csv.writer(file)
-        
-    #     # Write the header
-    #     writer.writerow(['Name', 'Age', 'City'])
-        
-        
-    #     # Write multiple rows
-    #     rows = [
-    #         ['Alice', 29, 'New York'],
-    #         ['Bob', 25, 'Los Angeles'],
-    #         ['Charlie', 35, 'Chicago']
-    #     ]
-    #     writer.writerows(rows)

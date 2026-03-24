@@ -62,37 +62,21 @@ Below are the significant arguments related to our work:
 python val_diffnet.py --root <Path to dataset> --ckpt_path <Path to diffusion network checkpoint> --devices '5,' --batch_size 8 --sampling ddim --sampling_stride 10 --num_eval_samples 128 --std_reg 0.3 --path_pca_V_k 'pca/imp_org/V_k_10.npy' --network_mode 'val'
 ```
 
-
-
-## Controllable Generation with ECM and ECMR
+## Controllable Generation with STRELGen
 ```sh
-python val_diffnet.py --root <Path to dataset> --ckpt_path <Path to diffusion network checkpoint> --devices '2,' --batch_size 16 --sampling ddim --sampling_stride 10 --num_eval_samples 128 --std_reg 0.3 --path_pca_V_k 'pca/imp_org/V_k_10.npy' --network_mode 'val' --guid_sampling 'guid' --guid_task 'rand_goal_5s' --guid_method <Guided sampling method> --guid_plot plot --cost_param_costl 10.0 --cost_param_threl 1.0
-```
-Below are the key arguments relevant to our work:
-- `--guid_method`: Specifies the guided sampling method you wish to use. Options are `['none', 'ECM', 'ECMR']`.
-- `--guid_task`: Defines the controllable tasks you plan to test. Options include `['none', 'goal', 'goal_5s', 'goal_at5s', 'rand_goal', 'rand_goal_5s', 'rand_goal_at5s']`.
+python guided_strel_multiple.py --root /leonardo_scratch/fast/IscrC_ADGA/argoverse_data/ --ckpt_path lightning_logs/version_3/checkpoints/epoch=62-step=393624.ckpt --batch_size 16 --sampling ddim --sampling_stride 10 --num_eval_samples 1 --std_reg 0.3 --path_pca_V_k 'pca/imp_org/V_k_10.npy' --property ped_unsafe --lambda_reg 0.001 --lr 0.05 --max_steps 200 --num_samples 2
 
 
 ## Citation
 If you find our work helpful, please **star 🌟** this repo and **cite 📑** our paper. BibTex will be updated soon. Thanks for your support!
-```
-@inproceedings{wang2025optimizing,
-  title={Optimizing diffusion models for joint trajectory prediction and controllable generation},
-  author={Wang, Yixiao and Tang, Chen and Sun, Lingfeng and Rossi, Simone and Xie, Yichen and Peng, Chensheng and Hannagan, Thomas and Sabatini, Stefano and Poerio, Nicola and Tomizuka, Masayoshi and others},
-  booktitle={European Conference on Computer Vision},
-  pages={324--341},
-  year={2025},
-  organization={Springer}
-}
-```
 
-This repository is developed based on [Query-Centric Trajectory Prediction](https://github.com/ZikangZhou/QCNet).
-Please also consider citing:
-```
-@inproceedings{zhou2023query,
-  title={Query-Centric Trajectory Prediction},
-  author={Zhou, Zikang and Wang, Jianping and Li, Yung-Hui and Huang, Yu-Kai},
-  booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
-  year={2023}
-}
-```
+## Acknowledgements
+
+This repository builds upon the original codebase developed by Yixiao Wang.
+The backbone of this implementation is adapted from the following repository:
+
+- https://github.com/YixiaoWang7/OptTrajDiff
+
+We thank the authors for making their work publicly available.
+
+Modifications and extensions have been made to support the contributions of this work.

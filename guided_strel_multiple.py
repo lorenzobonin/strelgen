@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 import os
 import json
 import pickle
@@ -67,10 +64,6 @@ if __name__ == '__main__':
     parser.add_argument('--cost_param_costl', type = float, default = 1.0)
     parser.add_argument('--cost_param_threl', type = float, default = 1.0)
     # === Optimization-specific arguments ===
-    # parser.add_argument('--property', type=str, default='reach_uns',
-    #                     choices=['reach_uns', 'head_real', 'ped_unsafe', 'reach_simp', 'pred_reach', 'ped_pred', 
-    #                              'surround_fast', 'ped_eg',
-    #                              'surround_accel', 'lane_change', 'fast_slow', 'mean_reach', 'min_vel'])
     parser.add_argument('--property', type=str, default='pred_reach')
     parser.add_argument('--num_samples', type=int, default=30)
     parser.add_argument('--lambda_reg', type=float, default=0.001)
@@ -106,25 +99,6 @@ if __name__ == '__main__':
     )
 
     #Example list of scenarios
-    # top_num_agents_scenarios = [
-    #      (25, 7520), (24, 11135), (23, 4611),
-    #      (20, 6323),
-    #     (19, 1359), (19, 6937)
-    # ]
-    #for ped unsafe
-    #top_num_agents_scenarios = [(19, 1359)]
-
-    #for surround
-    #top_num_agents_scenarios = [(20, 6323), (19, 6937)]
-    #top_num_agents_scenarios = [(20, 6323)]
-    #for heading
-    #top_num_agents_scenarios = [(24, 11135)]
-
-    #for reach
-    #top_num_agents_scenarios = [(25, 7520), (9, 10863)]
-    #top_num_agents_scenarios = [(25, 7520)]
-
-    #top_num_agents_scenarios = [(9, 10863)]
 
     if args.property == 'pred_reach':
         top_num_agents_scenarios = [(25, 7520)]
@@ -136,11 +110,10 @@ if __name__ == '__main__':
         top_num_agents_scenarios = [(19, 1359)]
     
     num_dim = 10
-    out_dir = f"outputs_{args.property}"
+    out_dir = f"TEST_outputs_{args.property}"
     save_dir = os.path.join('results_opt', out_dir)
     os.makedirs(save_dir, exist_ok=True)
     print('property:', args.property)
-    print('distance front and thresholds applied where needed!')
     # ========================================================
     # Store all results in a dict for reproducibility
     # ========================================================
@@ -170,7 +143,7 @@ if __name__ == '__main__':
         model.cond_data = graph
         x_T = torch.randn([num_agents, 1, num_dim])
     
-        full_world, pred_eval_local, mask_eval, eval_mask, full_types = model.latent_generator(x_T, scen_idx, plot=False, enable_grads=True, return_pred_only=False, return_types=True)
+        full_world, pred_eval_local, mask_eval, eval_mask, full_types = model.latent_generator(x_T, scen_idx, plot=True, enable_grads=True, return_pred_only=False, return_types=True)
         
         rec_pred, pred_types = model.latent_generator(x_T, scen_idx, plot=False, enable_grads=True, return_pred_only=True, return_types=True)
 
@@ -185,19 +158,10 @@ if __name__ == '__main__':
         su.summarize_reshaped(loc_reshaped)
 
         tmax, tglob = su.estimate_heading_thresholds(full_world)
-        # if args.property == 'head_real' or args.property == 'pred_reach' or args.property== 'ped_pred' or args.property=='min_vel':
-        #     node_types = pred_types
-        # else:
-        #     node_types = full_types
 
         z0 = torch.randn([num_agents, args.num_samples, num_dim], device=args.device)
 
         gen_model = sm.GenFromLatent(model, scen_idx, full_types = full_types, pred_types = pred_types, property_name=args.property, tmax=tmax, tglob=tglob).to(args.device)
-        
-
-
-
-
 
         # --- Evaluate initial robustness per sample ---
         rob_init = []
@@ -221,13 +185,12 @@ if __name__ == '__main__':
         # --- Vanilla generation ---
         vanilla_traj = model.latent_generator(
             z0, scen_idx, plot=True,
-            enable_grads=False, return_pred_only=True,
+            enable_grads=False, return_pred_only=False,
             exp_id=f"{seed_value}_vanilla_{scen_idx}",
             img_folder=img_dir,
             sub_folder=f'scen_{scen_idx}',
             filter_agents=True
         )
-
 
         z_opt = su.optimize_samples_individually(
             qmodel=gen_model,
@@ -259,7 +222,7 @@ if __name__ == '__main__':
         # --- Optimized generation ---
         opt_traj = model.latent_generator(
             z_opt, scen_idx, plot=True,
-            enable_grads=False, return_pred_only=True,
+            enable_grads=False, return_pred_only=False,
             exp_id=f"{seed_value}_opt_{scen_idx}",
             img_folder= img_dir,
             sub_folder=f'scen_{scen_idx}'
@@ -306,7 +269,6 @@ if __name__ == '__main__':
         except:
             print('cannot dump pickles!')
         try:
-            #all_types = [0,1,2,3,4,5,6,7,8]
             vanilla_all_distances = saf.min_vehicle_related_distance_per_sample(vanilla_traj, type_list, only_vehicles=False)
             print('minimum distance for vanilla_traj', vanilla_all_distances)
             opt_all_distances = saf.min_vehicle_related_distance_per_sample(opt_traj, type_list, only_vehicles=False)
@@ -314,7 +276,6 @@ if __name__ == '__main__':
 
         except Exception as e:
             print(e)
-            #print('cannot compute distances!')
         
         try:
             #used just to calculate collisions between vehicles
@@ -325,9 +286,9 @@ if __name__ == '__main__':
             vanilla_veh_collided = vanilla_veh_distances < 1
             opt_all_collided = (opt_all_distances < 0.4) | opt_veh_collided
             vanilla_all_collided = (vanilla_all_distances < 0.4) | vanilla_veh_collided
+
         except Exception as e:
             print(e)
-            #print('cannot compute collisions!')
         try:
             safety_results ={
                 "orig_distance" : vanilla_all_distances,
@@ -339,31 +300,18 @@ if __name__ == '__main__':
             with open(safe_path, "wb") as f:
                 pickle.dump(safety_results, f)
 
-            # Create a box plot
-            plt.boxplot([vanilla_all_distances, opt_all_distances], labels=['Vanilla', 'Opt'])
-            plt.title("Distances all")
-            plt.ylabel("Values")
-
-            # Save the figure
-            plt.savefig(os.path.join(save_dir,f"{scen_idx}_boxplot_dist.png"), dpi=300, bbox_inches='tight')
-
         except:
             print('cannot save safety results!')
 
 
     # ========================================================
-    # Save results to pickle + JSON
+    # Save results
     # ========================================================
 
     stats_path_pkl = os.path.join(save_dir, f"robustness_summary_seed{seed_value}.pkl")
-    stats_path_json = os.path.join(save_dir, f"robustness_summary_seed{seed_value}.json")
 
     with open(stats_path_pkl, "wb") as f:
         pickle.dump(summary_results, f)
 
-    with open(stats_path_json, "w") as f:
-        json.dump(summary_results, f, indent=4)
-
-    print(f"\n✅ All scenarios completed. Results saved in:")
+    print(f"\n All scenarios completed. Results saved in:")
     print(f"   → {stats_path_pkl}")
-    print(f"   → {stats_path_json}")

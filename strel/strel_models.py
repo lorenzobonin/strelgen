@@ -5,6 +5,10 @@ import pytorch_lightning as pl
 import strel.strel_properties as sp
 
 
+# TO DO:
+# REMOVE UNUSED SCENARIOS
+
+
 class GenFromLatent(pl.LightningModule):
         def __init__(self, model, scen_id, full_types, pred_types, property_name="reach_uns", tmax=0.2, tglob=3):
             super().__init__()
@@ -78,7 +82,7 @@ class GenFromLatent(pl.LightningModule):
             elif self.property_name == "surround_fast":
                 robustness = sp.evaluate_speeding_surrounded_unmask(full_world, self.valid_types)
             elif self.property_name == "surround_pred":
-                robustness = sp.evaluate_speeding_surrounded_unmask(pred_eval_local, self.pred_types)
+                robustness = sp.evaluate_speeding_surrounded_unmask(pred_eval_local, self.pred_types, d_zone=1.8)
             elif self.property_name == "surround_slow":
                 robustness = sp.evaluate_slowing_surrounded_unmask(pred_eval_local, self.pred_types)
 
@@ -89,7 +93,7 @@ class GenFromLatent(pl.LightningModule):
                 robustness = sp.evaluate_ped_reach_eg_mask(full_world, mask_eval, eval_mask, self.valid_types, d_zone=1.5)
 
             elif self.property_name == "ped_unsafe":
-                robustness = sp.evaluate_ped_somewhere_unmask(full_world, self.valid_types, d_zone= 2.5)
+                robustness = sp.evaluate_ped_somewhere_unmask(full_world, self.valid_types, d_zone= 6.0)
 
             elif self.property_name == "fast_slow":
                 robustness = sp.evaluate_fast_reach_slow_mask(full_world, mask_eval, eval_mask, self.valid_types, d_zone= 5)
