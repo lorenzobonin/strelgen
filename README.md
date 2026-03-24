@@ -1,48 +1,36 @@
-# OptTrajDiff
+# strelgen
 
-This repository is the official github repository for [OptTrajDiff](https://yixiaowang7.github.io/OptTrajDiff_Page/).
+This repository is the official github repository for the paper *Guiding neuro-symbolic scenario generation with spatio-temporal logic*.
 
  <!-- [![Project Page](https://img.shields.io/badge/Project-Website-orange)](https://cove-video.github.io/) [![arXiv](https://img.shields.io/badge/arXiv-COVE-b31b1b.svg)](https://arxiv.org/abs/2406.08850)  -->
 
-> **OptTrajDiff: Optimizing Diffusion Models for Joint Trajectory Prediction and Controllable Generation**  
-> [Yixiao Wang](https://yixiaowang7.github.io),
-> [Chen Tang](https://scholar.google.com/citations?user=x78TL58AAAAJ&hl=en&oi=ao),
-> [Lingfeng Sun](https://scholar.google.com/citations?user=Uxb6wbkAAAAJ&hl=en&oi=ao),
-> [Simone Rossi](https://scholar.google.com/citations?hl=en&user=lTt86awAAAAJ),
-> [Yichen Xie](https://scholar.google.com/citations?user=SdX6DaEAAAAJ&hl=en&oi=ao),
-> [Chensheng Peng](https://scholar.google.com/citations?user=DbZxclcAAAAJ&hl=en&oi=ao),
-> Thomas Hannagan,
-> Stefano Sabatini,
-> Nicola Poerio,
-> [Masayoshi Tomizuka](https://scholar.google.com/citations?user=8m8taGEAAAAJ&hl=en&oi=ao),
-> [Wei Zhan](https://scholar.google.com/citations?user=xVN3UxYAAAAJ&hl=en&oi=ao),
+> **Guiding neuro-symbolic scenario generation with spatio-temporal logic**  
+> [Lorenzo Bonin](https://scholar.google.com/citations?user=BI5BGaMAAAAJ&hl=it&oi=ao),
+> [Francesco Giacomarra](https://scholar.google.com/citations?user=13zTza8AAAAJ&hl=it&oi=ao),
+> [Luca Bortolussi](https://scholar.google.com/citations?user=p5ynADcAAAAJ&hl=it&oi=ao),
+> [Jyotirmoy V. Deshmukh](https://scholar.google.com/citations?user=CwFX74MAAAAJ&hl=it&oi=ao),
+> [Francesca Cairoli](https://scholar.google.com/citations?user=3s1GGlIAAAAJ&hl=it&oi=ao),
 
 
 <p>
-<!-- <img src="assets/repo_figures/Picture1.jpg" width="1080px"/> -->
 
- Diffusion models are promising for joint trajectory prediction and controllable generation in autonomous driving, but they face challenges of inefficient inference time and high computational demands. To tackle these challenges, we introduce Optimal Gaussian Diffusion (OGD) and Estimated Clean Manifold (ECM) Guidance. OGD optimizes the prior distribution for a small diffusion time $T$ and starts the reverse diffusion process from it. ECM directly injects guidance gradients to the estimated clean manifold, eliminating extensive gradient backpropagation throughout the network. Our methodology streamlines the generative process, enabling practical applications with reduced computational overhead. Experimental validation on the large-scale Argoverse 2 dataset demonstrates our approach's superior performance, offering a viable solution for computationally efficient, high-quality joint trajectory generation and controllable generation for autonomous driving.
+ The rapid advancement of autonomous driving (AD) technologies has outpaced the development of robust safety evaluation methods. Conventional testing relies on exposing AD systems to vast numbers of real-world traffic scenes—a brute-force approach that is prohibitively expensive and statistically ineffective at capturing the rare, safety-critical edge cases essential for validating real-world robustness. To address this fundamental limitation, we introduce *STRELGen*, a scalable framework for the targeted generation of safety-critical driving scenarios. *STRELGen* synergistically combines a multi-agent trajectory-generation diffusion model (DM) with Spatio-Temporal Logic (STREL) specifications that encode com- plex safety and realism properties through a highly interpretable formalism. Crucially, monitoring satisfaction levels of these specifications is differentiable, enabling gradient-based search. At inference time, we optimize directly over the DM’s latent space to maximize STREL formula satisfaction. The result is efficient generation of highly plausible yet safety-critical multi-agent scenarios that lie within the learned data distribution. *STRELGen* thus provides a flexible, interpretable, and powerful tool for stress-testing autonomous driving systems, moving beyond the limitations of brute-force data collection.
 
 </p>
 
 ## News
-- [2024.7.1] Paper is accepted by [ECCV 2024](https://eccv2024.ecva.net/)!
-
-## ToDo
-<!-- - □ Release code -->
-- [x] Release code
+- [2024.7.1] Paper is accepted by [AAMAS 2026](https://cyprusconferences.org/aamas2026/)!
 
 ## Initial Setup
 
 **Step 1**: Download the code by cloning the repository:
 ```
-git clone https://github.com/YixiaoWang7/OptTrajDiff.git && cd OptTrajDiff
+git clone https://github.com/lorenzobonin/strelgen.git && cd strelgen
 ```
 
-**Step 2**: Set up a new conda environment and install required packages:
+**Step 2**: Install required packages:
 ```
-conda env create -f environment.yml
-conda activate OptTrajDiff
+pip install -r requirements.txt
 ```
 
 **Step 3**: Implement the [Argoverse 2 API](https://github.com/argoverse/av2-api) and access the [Argoverse 2 Motion Forecasting Dataset](https://www.argoverse.org/av2.html). Please see the [Argoverse 2 User Guide](https://argoverse.github.io/user-guide/getting_started.html).
