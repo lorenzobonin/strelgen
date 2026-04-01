@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 
 
 # ============================================================
-# --- Main
+# --- Main code for multiple strel guided generation
 # ============================================================
 
 if __name__ == '__main__':
