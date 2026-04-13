@@ -19,7 +19,7 @@ This repository is the official github repository for the paper *Guiding neuro-s
 </p>
 
 ## News
-- [2024.7.1] Paper is accepted by [AAMAS 2026](https://cyprusconferences.org/aamas2026/)!
+- [2025.12.19] Paper is accepted by [AAMAS 2026](https://cyprusconferences.org/aamas2026/)!
 
 ## Initial Setup
 
@@ -64,8 +64,9 @@ python val_diffnet.py --root <Path to dataset> --ckpt_path <Path to diffusion ne
 
 ## Controllable Generation with STRELGen
 ```sh
-python guided_strel_multiple.py --root /leonardo_scratch/fast/IscrC_ADGA/argoverse_data/ --ckpt_path lightning_logs/version_3/checkpoints/epoch=62-step=393624.ckpt --batch_size 16 --sampling ddim --sampling_stride 10 --num_eval_samples 1 --std_reg 0.3 --path_pca_V_k 'pca/imp_org/V_k_10.npy' --property ped_unsafe --lambda_reg 0.001 --lr 0.05 --max_steps 200 --num_samples 2
-
+python guided_strel_multiple.py --root /leonardo_scratch/fast/IscrC_ADGA/argoverse_data/ --ckpt_path <Path to diffusion network checkpoint> --batch_size 16 --sampling ddim --sampling_stride 10 --num_eval_samples 1 --std_reg 0.3 --path_pca_V_k 'pca/imp_org/V_k_10.npy' --property ped_unsafe --lambda_reg 0.001 --lr 0.05 --max_steps 200 --num_samples 2
+```
+- `--property`: Indicates the STREL property we want to optimize for.
 
 ## Citation
 If you find our work helpful, please **star 🌟** this repo and **cite 📑** our paper. BibTex will be updated soon. Thanks for your support!
